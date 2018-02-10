@@ -620,9 +620,9 @@ Function Install-WSUS {
     }
 
 
-    Restart-DemoVM $VMName
+    #Restart-DemoVM $VMName
     
-    Wait-PSDirect $VMName -cred $localCred
+    #Wait-PSDirect $VMName -cred $DomainCred
 
     icm -VMName $VMName -Credential $domainCred {
     #Change server name and port number and $True if it is on SSL
@@ -744,6 +744,9 @@ Function Install-RRAS{
     #$null =  Stop-Service -Name WDSServer -ErrorAction SilentlyContinue
     #$null = Set-Service -Name WDSServer -StartupType Disabled -ErrorAction SilentlyContinue
 
+    $ExternalInterface="Internet"
+    $InternalInterface="CorpNet"
+
     $null = Start-Process -Wait:$true -FilePath "netsh" -ArgumentList "ras set conf ENABLED"
     $null = Set-Service -Name RemoteAccess -StartupType Automatic
     $null = Start-Service -Name RemoteAccess
@@ -751,7 +754,8 @@ Function Install-RRAS{
     $null = Start-Process -Wait:$true -FilePath "netsh" -ArgumentList "routing ip nat add interface ""CorpNet"""
     $null = Test-NetConnection 192.168.10.1
     $null = Test-NetConnection 4.2.2.2
-    $null = Start-Process -Wait:$true -FilePath "netsh" -ArgumentList "routing ip nat add interface ""Internet""full"
+    $null = cmd.exe /c "netsh routing ip nat add interface $externalinterface"
+    $null = cmd.exe /c "netsh routing ip nat set interface $externalinterface mode=full"
     $null = Test-NetConnection 192.168.10.1
    # $null = Test-NetConnection $($Subnet)1
     $null = Test-NetConnection 4.2.2.2
@@ -782,7 +786,7 @@ $ServerISO = 'f:\dcbuild_Insider\en_windows_server_2016_x64_dvd_9718492.iso' #TH
 $ServerISO1 = 'F:\DCBuild_Insider\Windows_InsiderPreview_Server_17079.iso' #THIS NEEDS to be Modified for your Lab
 
 
-$WindowsKey = '<Productkey>' #Dave's Technet KEY Remove for Publishing of Book
+$WindowsKey = '<ProductKey>' #Dave's Technet KEY Remove for Publishing of Book
 
 $unattendSource = [xml]@"
 <?xml version="1.0" encoding="utf-8"?>
