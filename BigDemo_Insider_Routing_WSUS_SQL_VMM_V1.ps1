@@ -1075,7 +1075,7 @@ Function Install-VMM {
 
 
 
-       $Null = cmd.exe /c "$($VMMDrive)\SCVMM_1801.exe /dir=$($vmmdrive)\SCVMM)"
+       $Null = cmd.exe /c "$($VMMDrive)\SCVMM_1801.exe /dir=$($vmmdrive)\SCVMM) /silent"
 
        Write-Output -InputObject "[$($VMName)]:: Waiting for VMM Install to Extract"
        Start-Sleep 120
