@@ -770,7 +770,10 @@ Function Install-RRAS{
 }
 
 Function Create-SQLInstallFile {
-
+#You will need to modify this for your environment accounts
+#I have defaulted to MVPDays\svc_SQL and a password of P@ssw0rd
+#If you are changing in your lab adjust acordingly 
+#I will automate this later on.
 
 Write-Output -InputObject "[$($VMName)]:: Creating SQL Install INI File"
 $functionText = @"
@@ -779,21 +782,22 @@ $functionText = @"
 ; Specifies a Setup work flow, like INSTALL, UNINSTALL, or UPGRADE. This is a required parameter. 
 ACTION="Install"
 ; Specifies that SQL Server Setup should not display the privacy statement when ran from the command line. 
-SUPPRESSPRIVACYSTATEMENTNOTICE="False"
+SUPPRESSPRIVACYSTATEMENTNOTICE="True"
+IACCEPTSQLSERVERLICENSETERMS="True"
 ; By specifying this parameter and accepting Microsoft R Open and Microsoft R Server terms, you acknowledge that you have read and understood the terms of use. 
-IACCEPTROPENLICENSETERMS="False"
+IACCEPTROPENLICENSETERMS="True"
 ; Use the /ENU parameter to install the English version of SQL Server on your localized Windows operating system. 
 ENU="True"
 ; Setup will not display any user interface. 
-QUIET="False"
+QUIET="True"
 ; Setup will display progress only, without any user interaction. 
 QUIETSIMPLE="False"
 ; Parameter that controls the user interface behavior. Valid values are Normal for the full UI,AutoAdvance for a simplied UI, and EnableUIOnServerCore for bypassing Server Core setup GUI block. 
-UIMODE="Normal"
+;UIMODE="Normal"
 ; Specify whether SQL Server Setup should discover and include product updates. The valid values are True and False or 1 and 0. By default SQL Server Setup will include updates that are found. 
 UpdateEnabled="True"
 ; If this parameter is provided, then this computer will use Microsoft Update to check for updates. 
-USEMICROSOFTUPDATE="False"
+USEMICROSOFTUPDATE="True"
 ; Specifies features to install, uninstall, or upgrade. The list of top-level features include SQL, AS, RS, IS, MDS, and Tools. The SQL feature will install the Database Engine, Replication, Full-Text, and Data Quality Services (DQS) server. The Tools feature will install shared components. 
 FEATURES=SQLENGINE,RS
 ; Specify the location where SQL Server Setup will obtain product updates. The valid values are "MU" to search Microsoft Update, a valid folder path, a relative path such as .\MyUpdates or a UNC share. By default SQL Server Setup will search Microsoft Update or a Windows Update service through the Window Server Update Services. 
@@ -807,9 +811,9 @@ X86="False"
 ; Specify a default or named instance. MSSQLSERVER is the default instance for non-Express editions and SQLExpress for Express editions. This parameter is required when installing the SQL Server Database Engine (SQL), Analysis Services (AS), or Reporting Services (RS). 
 INSTANCENAME="MSSQLSERVER"
 ; Specify the root installation directory for shared components.  This directory remains unchanged after shared components are already installed. 
-INSTALLSHAREDDIR="F:\Program Files\Microsoft SQL Server"
+INSTALLSHAREDDIR="E:\Program Files\Microsoft SQL Server"
 ; Specify the root installation directory for the WOW64 shared components.  This directory remains unchanged after WOW64 shared components are already installed. 
-INSTALLSHAREDWOWDIR="F:\Program Files (x86)\Microsoft SQL Server"
+INSTALLSHAREDWOWDIR="E:\Program Files (x86)\Microsoft SQL Server"
 ; Specify the Instance ID for the SQL Server features you have specified. SQL Server directory structure, registry structure, and service names will incorporate the instance ID of the SQL Server instance. 
 INSTANCEID="MSSQLSERVER"
 ; Specifies which mode report server is installed in.  
@@ -820,9 +824,10 @@ SQLTELSVCACCT="NT Service\SQLTELEMETRY"
 ; TelemetryStartupConfigDescription 
 SQLTELSVCSTARTUPTYPE="Automatic"
 ; Specify the installation directory. 
-INSTANCEDIR="F:\Program Files\Microsoft SQL Server"
+INSTANCEDIR="E:\Program Files\Microsoft SQL Server"
 ; Agent account name 
 AGTSVCACCOUNT="MVPDAYS\SVC_SQL"
+AGTSVCPASSWORD="P@ssw0rd"
 ; Auto-start service after installation.  
 AGTSVCSTARTUPTYPE="Manual"
 ; CM brick TCP communication port 
@@ -843,6 +848,7 @@ ENABLERANU="False"
 SQLCOLLATION="SQL_Latin1_General_CP1_CI_AS"
 ; Account for SQL Server service: Domain\User or system account. 
 SQLSVCACCOUNT="MVPDAYS\SVC_SQL"
+SQLSVCPASSWORD="P@ssw0rd"
 ; Set to "True" to enable instant file initialization for SQL Server service. If enabled, Setup will grant Perform Volume Maintenance Task privilege to the Database Engine Service SID. This may lead to information disclosure as it could allow deleted content to be accessed by an unauthorized principal. 
 SQLSVCINSTANTFILEINIT="True"
 ; Windows account(s) to provision as SQL Server system administrators. 
@@ -869,6 +875,7 @@ BROWSERSVCSTARTUPTYPE="Disabled"
 ; The username part of RSSVCACCOUNT is a maximum of 20 characters long and
 ; The domain part of RSSVCACCOUNT is a maximum of 254 characters long. 
 RSSVCACCOUNT="MVPDAYS\SVC_SQL"
+RSSVCPASSWORD="P@ssw0rd"
 ; Specifies how the startup mode of the report server NT service.  When 
 ; Manual - Service startup is manual mode (default).
 ; Automatic - Service startup is automatic mode.
@@ -903,12 +910,13 @@ Function Install-SQL {
     Copy-Item -Path "$($WorkingDir)\en_sql_server_2016_standard_with_service_pack_1_x64_dvd_9540929.iso" -Destination "$($SQLDriveLetter)\en_sql_server_2016_standard_with_service_pack_1_x64_dvd_9540929.iso" -Force
     Write-Output -InputObject "[$($VMName)]:: Copying SQLInstall.ini to the new VHDx"
     Copy-Item -Path "$($WorkingDir)\SQLInstall.ini" -Destination "$($SQLDriveLetter)\SQLInstall.ini" -Force
+    Write-Output -InputObject "[$($VMName)]:: Copying SSMS to the new VHDx"
+    Copy-Item -Path "$($WorkingDir)\SSMS-Setup-ENU.exe" -Destination "$($SQLDriveLetter)\SSMS-Setup-ENU.exe" -Force
     Dismount-VHD -Path "$($VMPath)\$($GuestOSName) - SQL Data 1.vhdx"
     Add-VMHardDiskDrive -VMName $VMName -Path "$($VMPath)\$($GuestOSName) - SQL Data 1.vhdx" -ControllerType SCSI
   
 
-
-
+     
     icm -VMName $VMName -Credential $domainCred {
 
     Write-Output -InputObject "[$($VMName)]:: Adding the new VHDx for the SQL Install"
@@ -916,59 +924,53 @@ Function Install-SQL {
     Get-Disk | Where Number -NE "0" |  Set-Disk -IsReadOnly $False
     $Driveletter = get-wmiobject -class "Win32_Volume" -namespace "root\cimv2" | where-object {$_.Label -like "SQL*"}
     $SQLDrive = $Driveletter.DriveLetter
-    
-    # get account credentials to configure SQL
+    $SQLDrive
 
-        $sqlsvc = $SQLCred
+    Write-Output -InputObject "[$($VMName)]:: Mounting SQL ISO"
 
-        $agtsvc = $SQLCred
+    $iso = Get-ChildItem -Path "$($SQLDrive)\en_sql_server_2016_standard_with_service_pack_1_x64_dvd_9540929.iso"  #CHANGE THIS!
 
-       # $sapwd = $(Read-Host -Prompt "SQL 'sa' login pwd" -AsSecureString)
+    Mount-DiskImage $iso.FullName
 
-
-
-        # multi-line string concatenation
-
-        $arglist = '/ConfigurationFile="$($SQLDrive)\SqlInstall.ini"' `  #CHANGE THIS!
-
-            + ' /AGTSVCACCOUNT="' + $agtsvc.UserName + '"' `
-
-            + ' /AGTSVCPASSWORD="' + $agtsvc.GetNetworkCredential().Password + '"' `
-
-            + ' /SQLSVCACCOUNT="' + $sqlsvc.UserName + '"' `
-
-            + ' /SQLSVCPASSWORD="' + $sqlsvc.GetNetworkCredential().Password + '"' 
-
-            #+ ' /SAPWD="' + [System.Runtime.InteropServices.Marshal]::PtrToStringAuto([System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($sapwd)) + '"'
-
-        # this last crazy tidbit converts the SecureString to a plain string that is still "secure"
-
-        # in the sense that it can't be sniffed or dumped from memory by another process.  At least, that's my understanding.
-
-        
-
-        # mount the install image
-        Write-Output -InputObject "[$($VMName)]:: Mounting SQL ISO"
-
-        $iso = Get-ChildItem -Path "$($SQLDrive)\en_sql_server_2016_standard_with_service_pack_1_x64_dvd_9540929.iso)"  #CHANGE THIS!
-
-        Mount-DiskImage $iso.FullName
-
-
-
-        # get the drive letter of the mounted image to reference setup.exe
 
         Write-Output -InputObject "[$($VMName)]:: Running SQL Unattended Install"
 
-        $setup = $(Get-DiskImage -ImagePath $iso.FullName | Get-Volume).DriveLetter + ":\setup.exe"
-
-
+        $setup = $(Get-DiskImage -ImagePath $iso.FullName | Get-Volume).DriveLetter +':' 
+        $setup
+        cmd.exe /c "$($Setup)\setup.exe /ConfigurationFile=$($SQLDrive)\SqlInstall.ini"
+        }
 
         # run installer with arg-list built above, including config file and service/SA accounts
 
-        Start-Process -Verb runas -FilePath $setup -ArgumentList $arglist -Wait
+        #Start-Process -Verb runas -FilePath $setup -ArgumentList $arglist -Wait
 
 
+         Write-Output -InputObject "[$($VMName)]:: Downloading SSMS"
+         #Invoke-Webrequest was REALLY SLOW
+         #Invoke-webrequest -uri https://go.microsoft.com/fwlink/?linkid=864329 -OutFile "$($SQLDrive)\SSMS-Setup-ENU.exe"
+         #Changing to System.Net.WebClient
+        # (New-Object System.Net.WebClient).DownloadFile("https://go.microsoft.com/fwlink/?linkid=864329","$($SQLDrive)\SSMS-Setup-ENU.exe")    
+
+
+
+        # You can grab SSMS here:    https://docs.microsoft.com/en-us/sql/ssms/download-sql-server-management-studio-ssms
+
+
+
+        Start-Transcript -Path "$($SQLDrive)\SSMS-Install.log"
+
+
+
+        $StartDateTime = get-date
+
+        Write-Output -InputObject "[$($VMName)]:: Script started at $StartDateTime"
+
+        $setupfile = "$($VMMDrive)\SSMS-Setup-ENU.exe"
+        Write-Output -InputObject "[$($VMName)]:: Installing SSMS"
+
+        Start-Process -Wait -FilePath $setupfile -ArgumentList "/install /quiet /norestart"
+
+        Stop-Transcript
 
         # un-mount the install image when done after waiting 1 second (just for kicks)
 
@@ -978,34 +980,35 @@ Function Install-SQL {
     
     }
     
-    }
+    
 
 Function Install-VMM {
-  #Installs SQL Server 2016 in the Lab
+  #Installs VMM 1801 in the Lab
   param
   (
     [string]$VMName, 
-    [string]$GuestOSName
+    [string]$GuestOSName,
+    [string]$VMMDomain
   )
 
     Write-Output -InputObject "[$($VMName)]:: Adding Drive for VMM Install"
 
-    New-VHD -Path "$($VMPath)\$($GuestOSName) - VMM Data 1.vhdx" -Dynamic -SizeBytes 50GB 
-    Mount-VHD -Path "$($VMPath)\$($GuestOSName) - VMM Data 1.vhdx" 
-    $DiskNumber = (Get-Diskimage -ImagePath "$($VMPath)\$($GuestOSName) - VMM Data 1.vhdx").Number
+    New-VHD -Path "$($VMPath)\$($GuestOSName) - VMM Data 2.vhdx" -Dynamic -SizeBytes 50GB 
+    Mount-VHD -Path "$($VMPath)\$($GuestOSName) - VMM Data 2.vhdx" 
+    $DiskNumber = (Get-Diskimage -ImagePath "$($VMPath)\$($GuestOSName) - VMM Data 2.vhdx").Number
     Initialize-Disk -Number $DiskNumber -PartitionStyle GPT 
     Get-Disk -Number $DiskNumber | New-Partition -UseMaximumSize -AssignDriveLetter | Format-Volume -FileSystem NTFS -NewFileSystemLabel "VMM" -Confirm:$False
     $Driveletter = get-wmiobject -class "Win32_Volume" -namespace "root\cimv2" | where-object {$_.Label -like "VMM*"}
     $VMMDriveLetter = $DriveLetter.DriveLetter
     Write-Output -InputObject "[$($VMName)]:: Copying VMM 1801 EXE to the new VHDx"
     Copy-Item -Path "$($WorkingDir)\SCVMM_1801.exe" -Destination "$($VMMDriveLetter)\SCVMM_1801.exe" -Force
-    Dismount-VHD -Path "$($VMPath)\$($GuestOSName) - VMM Data 1.vhdx"
-    Add-VMHardDiskDrive -VMName $VMName -Path "$($VMPath)\$($GuestOSName) - VMM Data 1.vhdx" -ControllerType SCSI
+    Write-Output -InputObject "[$($VMName)]:: Copying ADK to the new VHDx"
+    Copy-Item -Path "$($WorkingDir)\adksetup.exe" -Destination "$($VMMDriveLetter)\adksetup.exe" -Force
+    Dismount-VHD -Path "$($VMPath)\$($GuestOSName) - VMM Data 2.vhdx"
+    Add-VMHardDiskDrive -VMName $VMName -Path "$($VMPath)\$($GuestOSName) - VMM Data 2.vhdx" -ControllerType SCSI
   
 
-
-
-    icm -VMName $VMName -Credential $domainCred {
+      icm -VMName $VMName -Credential $domainCred {
 
     Write-Output -InputObject "[$($VMName)]:: Adding the new VHDx for the VMM Install"
     Get-Disk | Where OperationalStatus -EQ "Offline" | Set-Disk -IsOffline $False 
@@ -1014,7 +1017,8 @@ Function Install-VMM {
     $VMMDrive = $Driveletter.DriveLetter
 
      Write-Output -InputObject "[$($VMName)]:: Downloading ADK"
-     Invoke-webrequest -uri https://go.microsoft.com/fwlink/p/?linkid=859206 -OutFile $($VMMDrive)\adksetup.exe
+     #Invoke-webrequest -uri https://go.microsoft.com/fwlink/p/?linkid=859206 -OutFile "$($VMMDrive)\adksetup.exe"
+    # (New-Object System.Net.WebClient).DownloadFile("https://go.microsoft.com/fwlink/p/?linkid=859206","f:\iso\adksetup.exe")
 
      #Sample ADK install
 
@@ -1032,7 +1036,7 @@ Function Install-VMM {
 
         Write-Output -InputObject "[$($VMName)]:: Script started at $StartDateTime"
 
-        $setupfile = (Get-Item -Path "$VMMDrive\ADKsetup.exe" -ErrorAction SilentlyContinue).fullname
+        $setupfile = "$($VMMDrive)\ADKsetup.exe"
         
         Write-Output -InputObject "[$($VMName)]:: Installing ADK..."
 
@@ -1053,34 +1057,14 @@ Function Install-VMM {
 
         $StartDateTime = get-date
 
-        Write-Output -InputObject "[$($VMName)]:: Script started at $StartDateTime"
+       $null = Get-Service MSSQLServer | Start-Service
 
-        Write-Output -InputObject "[$($VMName)]:: Ensuring SQL Service is Running"
-     
-        if ((get-service MSSQLServer).Status -ne "Running"){
-
-            do{
-
-                Write-Host "Waiting for SQL Service to start"
-
-                Start-Sleep 10
-
-                Start-Service -Name MSSQLServer
-
-            }until ((get-service MSSQLServer).Status -eq "Running")
-
-            Write-Host "SQL Service is running"
-
-        }
-
-
-
-       $Null = cmd.exe /c "$($VMMDrive)\SCVMM_1801.exe /dir=$($vmmdrive)\SCVMM) /silent"
+       $Null = cmd.exe /c "$($VMMDrive)\SCVMM_1801.exe /dir=$($vmmdrive)\SCVMM /silent"
 
        Write-Output -InputObject "[$($VMName)]:: Waiting for VMM Install to Extract"
        Start-Sleep 120
 
-       $setupfile = (Get-Item -Path "($($VMMDrive)\SCVMM\setup.exe" -ErrorAction SilentlyContinue).fullname
+       $setupfile = "$($VMMDrive)\SCVMM\setup.exe"
        Write-Output -InputObject "[$($VMName)]:: Installing VMM"
 
         
@@ -1105,7 +1089,9 @@ Function Install-VMM {
 
         SqlMachineName=VMM01
 
-        LibrarySharePath=$($VMMDrive)\ProgramData\Virtual Machine Manager Library Files
+        LibrarySharePath=$($VMMDrive)\MSCVMMLibrary
+
+        ProgramFiles=$($VMMDrive)\Program Files\Microsoft System Center\Virtual Machine Manager
 
         LibraryShareName=MSSCVMMLibrary
 
@@ -1113,18 +1099,20 @@ Function Install-VMM {
 
         MUOptIn = 1
 "@
-      
+        
         Set-Content $unattendFile $fileContent
 
         Write-Output -InputObject "[$($VMName)]:: VMM Is Being Installed"
 
-        & $setupfile /server /i /f $($VMMDrive)\VMServer.ini /IACCEPTSCEULA /VmmServiceDomain DomainNameGoesHere /VmmServiceUserName SVC_VMM /VmmServiceUserPassword P@ssw0rd
+        Get-Service MSSQLServer | Start-Service 
+
+        cmd.exe /c "$vmmdrive\scvmm\setup.exe /server /i /f $VMMDrive\VMServer.ini /IACCEPTSCEULA /VmmServiceDomain $VMMDomain /VmmServiceUserName SVC_VMM /VmmServiceUserPassword P@ssw0rd"
 
         do{
 
         Start-Sleep 1
 
-        }until ((Get-Process | Where-Object {$_.Description -eq "Virtual Machine Manager Setup"} -ErrorAction SilentlyContinue) -eq $null)
+        }until ((Get-Process | Where-Object {$_.Description -eq "SetupVM"} -ErrorAction SilentlyContinue) -eq $null)
 
         Write-Output -InputObject "[$($VMName)]:: VMM has been Installed"
 
@@ -1135,6 +1123,529 @@ Function Install-VMM {
        
     }
 
+ }
+
+<#>
+Function Install-SCOM {
+  #Installs SCOM 1801 in the Lab
+  param
+  (
+    [string]$VMName, 
+    [string]$GuestOSName,
+    [string]$SQLServer
+  )
+
+    Write-Output -InputObject "[$($VMName)]:: Adding Drive for SCOM Install"
+
+    New-VHD -Path "$($VMPath)\$($GuestOSName) - SCOM Data 1.vhdx" -Dynamic -SizeBytes 50GB 
+    Mount-VHD -Path "$($VMPath)\$($GuestOSName) - SCOM Data 1.vhdx" 
+    $DiskNumber = (Get-Diskimage -ImagePath "$($VMPath)\$($GuestOSName) - SCOM Data 1.vhdx").Number
+    Initialize-Disk -Number $DiskNumber -PartitionStyle GPT 
+    Get-Disk -Number $DiskNumber | New-Partition -UseMaximumSize -AssignDriveLetter | Format-Volume -FileSystem NTFS -NewFileSystemLabel "SCOM" -Confirm:$False
+    $Driveletter = get-wmiobject -class "Win32_Volume" -namespace "root\cimv2" | where-object {$_.Label -like "SCOM*"}
+    $VMMDriveLetter = $DriveLetter.DriveLetter
+    Write-Output -InputObject "[$($VMName)]:: Copying SCOM 1801 EXE to the new VHDx"
+    Copy-Item -Path "$($WorkingDir)\SCOM_1801.exe" -Destination "$($VMMDriveLetter)\SCOM_1801.exe" -Force
+    Dismount-VHD -Path "$($VMPath)\$($GuestOSName) - SCOM Data 1.vhdx"
+    Add-VMHardDiskDrive -VMName $VMName -Path "$($VMPath)\$($GuestOSName) - SCOM Data 1.vhdx" -ControllerType SCSI
+  
+
+      icm -VMName $VMName -Credential $domainCred {
+
+    Write-Output -InputObject "[$($VMName)]:: Adding the new VHDx for the SCOM Install"
+    Get-Disk | Where OperationalStatus -EQ "Offline" | Set-Disk -IsOffline $False 
+    Get-Disk | Where Number -NE "0" |  Set-Disk -IsReadOnly $False
+    $Driveletter = get-wmiobject -class "Win32_Volume" -namespace "root\cimv2" | where-object {$_.Label -like "SCOM*"}
+    $VMMDrive = $Driveletter.DriveLetter
+
+     Write-Output -InputObject "[$($VMName)]:: Downloading ADK"
+     Invoke-webrequest -uri https://go.microsoft.com/fwlink/p/?linkid=859206 -OutFile "$($VMMDrive)\adksetup.exe"
+
+     #Sample ADK install
+
+
+
+        # You can grab ADK here:     https://msdn.microsoft.com/en-us/windows/hardware/dn913721.aspx
+
+
+
+        Start-Transcript -Path "$($VMMDrive)\ADK_Install.log"
+
+
+
+        $StartDateTime = get-date
+
+        Write-Output -InputObject "[$($VMName)]:: Script started at $StartDateTime"
+
+        $setupfile = "$($VMMDrive)\ADKsetup.exe"
+        
+        Write-Output -InputObject "[$($VMName)]:: Installing ADK..."
+
+        Write-Output -InputObject "[$($VMName)]:: ADK Is being installed..."
+  
+        Start-Process -Wait -FilePath $setupfile -ArgumentList "/features OptionID.DeploymentTools OptionID.WindowsPreinstallationEnvironment /quiet"
+
+        Write-Output -InputObject "[$($VMName)]:: ADK install finished at $(Get-date) and took $(((get-date) - $StartDateTime).TotalMinutes) Minutes"
+
+        
+        Stop-Transcript
+
+        
+
+        Start-Transcript -Path "$($VMmDrive)\SCVMM_Install.log"
+
+
+
+        $StartDateTime = get-date
+
+       $null = Get-Service MSSQLServer | Start-Service
+
+       $Null = cmd.exe /c "$($VMMDrive)\SCVMM_1801.exe /dir=$($vmmdrive)\SCVMM /silent"
+
+       Write-Output -InputObject "[$($VMName)]:: Waiting for VMM Install to Extract"
+       Start-Sleep 120
+
+       $setupfile = "$($VMMDrive)\SCVMM\setup.exe"
+       Write-Output -InputObject "[$($VMName)]:: Installing VMM"
+
+        
+
+
+
+        ###Get workdirectory###
+
+        #Install VMM
+        $unattendFile = New-Item "$($VMMDrive)\VMServer.ini" -type File
+
+     $FileContent = @"
+        [OPTIONS]
+
+        CompanyName=MVPDays
+
+        CreateNewSqlDatabase=1
+
+        SqlInstanceName=MSSQLServer
+
+        SqlDatabaseName=VirtualManagerDB
+
+        SqlMachineName=VMM01
+
+        LibrarySharePath=$($VMMDrive)\MSCVMMLibrary
+
+        ProgramFiles=$($VMMDrive)\Program Files\Microsoft System Center\Virtual Machine Manager
+
+        LibraryShareName=MSSCVMMLibrary
+
+        SQMOptIn = 1
+
+        MUOptIn = 1
+"@
+        
+        Set-Content $unattendFile $fileContent
+
+        Write-Output -InputObject "[$($VMName)]:: VMM Is Being Installed"
+
+        Get-Service MSSQLServer | Start-Service 
+
+        cmd / "$setupfile /server /i /f $VMMDrive\VMServer.ini /IACCEPTSCEULA /VmmServiceDomain $DomainName /VmmServiceUserName SVC_VMM /VmmServiceUserPassword P@ssw0rd"
+
+        do{
+
+        Start-Sleep 1
+
+        }until ((Get-Process | Where-Object {$_.Description -eq "SetupVM"} -ErrorAction SilentlyContinue) -eq $null)
+
+        Write-Output -InputObject "[$($VMName)]:: VMM has been Installed"
+
+
+
+        Stop-Transcript
+
+       
+    }
+
+ }
+</#>
+
+Function Install-Veeam  {
+
+  #Installs Veeam 9.5 and UR 3
+  param
+  (
+    [string]$VMName, 
+    [string]$GuestOSName
+  )
+
+    Write-Output -InputObject "[$($VMName)]:: Adding Drive for Veeam Install"
+
+    New-VHD -Path "$($VMPath)\$($GuestOSName) - Veeam Data 1.vhdx" -Dynamic -SizeBytes 60GB 
+    Mount-VHD -Path "$($VMPath)\$($GuestOSName) - Veeam Data 1.vhdx"
+    $DiskNumber = (Get-Diskimage -ImagePath "$($VMPath)\$($GuestOSName) - Veeam Data 1.vhdx").Number
+    Initialize-Disk -Number $DiskNumber -PartitionStyle GPT 
+    Get-Disk -Number $DiskNumber | New-Partition -UseMaximumSize -AssignDriveLetter | Format-Volume -FileSystem NTFS -NewFileSystemLabel "Veeam" -Confirm:$False
+    $Driveletter = get-wmiobject -class "Win32_Volume" -namespace "root\cimv2" | where-object {$_.Label -like "Veeam*"}
+    $VeeamDriveLetter = $DriveLetter.DriveLetter
+    
+    
+    Write-Output -InputObject "[$($VMName)]:: Copying Veeam ISO and Rollups into the new VHDx"
+    Copy-Item -Path "$($WorkingDir)\VeeamBackup&Replication_9.5.0.1536.Update3.iso" -Destination "$($VeeamDriveLetter)\VeeamBackup&Replication_9.5.0.1536.Update3.iso" -Force
+    Write-Output -InputObject "[$($VMName)]:: Copying Veeam license and Rollups into the new VHDx"
+    Copy-Item -Path "$($WorkingDir)\veeam_backup_nfr_0_12.lic" -Destination "$($VeeamDriveLetter)\veeam_backup_nfr_0_12.lic" -Force
+    Dismount-VHD -Path "$($VMPath)\$($GuestOSName) - Veeam Data 1.vhdx"
+    Add-VMHardDiskDrive -VMName $VMName -Path "$($VMPath)\$($GuestOSName) - Veeam Data 1.vhdx" -ControllerType SCSI
+  
+
+     
+    icm -VMName $VMName -Credential $domainCred {
+
+
+
+    Write-Output -InputObject "[$($VMName)]:: Adding the new VHDx for the Veeam Install"
+    Get-Disk | Where OperationalStatus -EQ "Offline" | Set-Disk -IsOffline $False 
+    Get-Disk | Where Number -NE "0" |  Set-Disk -IsReadOnly $False
+    $Driveletter = get-wmiobject -class "Win32_Volume" -namespace "root\cimv2" | where-object {$_.Label -like "Veeam*"}
+    $VeeamDrive = $Driveletter.DriveLetter
+    $VeeamDrive
+
+    Write-Output -InputObject "[$($VMName)]:: Mounting Veeam ISO"
+
+    $iso = Get-ChildItem -Path "$($VeeamDrive)\VeeamBackup&Replication_9.5.0.1536.Update3.iso"  #CHANGE THIS!
+
+    Mount-DiskImage $iso.FullName
+
+    Write-Output -InputObject "[$($VMName)]:: Installing Veeam Unattended"
+
+        $setup = $(Get-DiskImage -ImagePath $iso.FullName | Get-Volume).DriveLetter +':' 
+        $setup
+       
+
+            # Requires PowerShell 5.1
+        # Requires .Net 4.5.2 and Reboot
+        #Source PowerShell Code from https://gist.githubusercontent.com/mycloudrevolution/b176f5ab987ff787ba4fce5c177780dc/raw/f20a78dc9b7c1085b1fe4d243de3fcb514970d70/VeeamBR95-Silent.ps1
+
+        #region: Variables
+        $source = $setup
+        $licensefile = "$($VeeamDrive)\veeam_backup_nfr_0_12.lic"
+        $username = "svc_veeam"
+        $fulluser = "MVPDays\svc_Veeam"
+        $password = "P@ssw0rd"
+        $CatalogPath = "$($VeeamDrive)\VbrCatalog"
+        $vPowerPath = "$($VeeamDrive)\vPowerNfs"
+        #endregion
+
+        #region: logdir
+        $logdir = "$($VeeamDrive)\logdir"
+        $trash = New-Item -ItemType Directory -path $logdir  -ErrorAction SilentlyContinue
+        #endregion
+
+        ### Optional .Net 4.5.2
+        <#
+        Write-Host "    Installing .Net 4.5.2 ..." -ForegroundColor Yellow
+        $Arguments = "/quiet /norestart"
+        Start-Process "$source\Redistr\NDP452-KB2901907-x86-x64-AllOS-ENU.exe" -ArgumentList $Arguments -Wait -NoNewWindow
+        Restart-Computer -Confirm:$true
+        #>
+
+        ### Optional PowerShell 5.1
+        <#
+        Write-Host "    Installing PowerShell 5.1 ..." -ForegroundColor Yellow
+        $Arguments = "C:\_install\Win8.1AndW2K12R2-KB3191564-x64.msu /quiet /norestart"
+        Start-Process "wusa.exe" -ArgumentList $Arguments -Wait -NoNewWindow
+        Restart-Computer -Confirm:$true
+        #>
+
+        #region: Installation
+        #  Info: https://www.veeam.com/unattended_installation_ds.pdf
+
+        ## Global Prerequirements
+        Write-Host "Installing Global Prerequirements ..." -ForegroundColor Yellow
+        ### 2012 System CLR Types
+        Write-Host "    Installing 2012 System CLR Types ..." -ForegroundColor Yellow
+        $MSIArguments = @(
+            "/i"
+            "$source\Redistr\x64\SQLSysClrTypes.msi"
+            "/qn"
+            "/norestart"
+            "/L*v"
+            "$logdir\01_CLR.txt"
+        )
+        Start-Process "msiexec.exe" -ArgumentList $MSIArguments -Wait -NoNewWindow
+
+        if (Select-String -path "$logdir\01_CLR.txt" -pattern "Installation success or error status: 0.") {
+            Write-Host "    Setup OK" -ForegroundColor Green
+            }
+            else {
+                throw "Setup Failed"
+                }
+
+        ### 2012 Shared management objects
+        Write-Host "    Installing 2012 Shared management objects ..." -ForegroundColor Yellow
+        $MSIArguments = @(
+            "/i"
+            "$source\Redistr\x64\SharedManagementObjects.msi"
+            "/qn"
+            "/norestart"
+            "/L*v"
+            "$logdir\02_Shared.txt"
+        )
+        Start-Process "msiexec.exe" -ArgumentList $MSIArguments -Wait -NoNewWindow
+
+        if (Select-String -path "$logdir\02_Shared.txt" -pattern "Installation success or error status: 0.") {
+            Write-Host "    Setup OK" -ForegroundColor Green
+            }
+            else {
+                throw "Setup Failed"
+                }
+
+        ### SQL Express
+        ### Info: https://msdn.microsoft.com/en-us/library/ms144259.aspx
+        Write-Host "    Installing SQL Express ..." -ForegroundColor Yellow
+        $Arguments = "/HIDECONSOLE /Q /IACCEPTSQLSERVERLICENSETERMS /ACTION=install /FEATURES=SQLEngine,SNAC_SDK /INSTANCENAME=VEEAMSQL2012 /SQLSVCACCOUNT=`"NT AUTHORITY\SYSTEM`" /SQLSYSADMINACCOUNTS=`"$fulluser`" `"Builtin\Administrators`" /TCPENABLED=1 /NPENABLED=1 /UpdateEnabled=0"
+        Start-Process "$source\Redistr\x64\SQLEXPR_x64_ENU.exe" -ArgumentList $Arguments -Wait -NoNewWindow
+
+        ## Veeam Backup & Replication
+        Write-Host "Installing Veeam Backup & Replication ..." -ForegroundColor Yellow
+        ### Backup Catalog
+        Write-Host "    Installing Backup Catalog ..." -ForegroundColor Yellow
+        $trash = New-Item -ItemType Directory -path $CatalogPath -ErrorAction SilentlyContinue
+        $MSIArguments = @(
+            "/i"
+            "$source\Catalog\VeeamBackupCatalog64.msi"
+            "/qn"
+            "/L*v"
+            "$logdir\04_Catalog.txt"
+            "VM_CATALOGPATH=$CatalogPath"
+            "VBRC_SERVICE_USER=$fulluser"
+            "VBRC_SERVICE_PASSWORD=$password"
+        )
+        Start-Process "msiexec.exe" -ArgumentList $MSIArguments -Wait -NoNewWindow
+
+        if (Select-String -path "$logdir\04_Catalog.txt" -pattern "Installation success or error status: 0.") {
+            Write-Host "    Setup OK" -ForegroundColor Green
+            }
+            else {
+                throw "Setup Failed"
+                }
+
+        ### Backup Server
+        Write-Host "    Installing Backup Server ..." -ForegroundColor Yellow
+        $trash = New-Item -ItemType Directory -path $vPowerPath -ErrorAction SilentlyContinue
+        $MSIArguments = @(
+            "/i"
+            "$source\Backup\Server.x64.msi"
+            "/qn"
+            "/L*v"
+            "$logdir\05_Backup.txt"
+            "ACCEPTEULA=YES"
+            "VBR_LICENSE_FILE=$licensefile"
+            "VBR_SERVICE_USER=$fulluser"
+            "VBR_SERVICE_PASSWORD=$password"
+            "PF_AD_NFSDATASTORE=$vPowerPath"
+            "VBR_SQLSERVER_SERVER=$env:COMPUTERNAME\VEEAMSQL2012"
+        )
+        Start-Process "msiexec.exe" -ArgumentList $MSIArguments -Wait -NoNewWindow
+
+        if (Select-String -path "$logdir\05_Backup.txt" -pattern "Installation success or error status: 0.") {
+            Write-Host "    Setup OK" -ForegroundColor Green
+            }
+            else {
+                throw "Setup Failed"
+                }
+
+        ### Backup Console
+        Write-Host "    Installing Backup Console ..." -ForegroundColor Yellow
+        $MSIArguments = @(
+            "/i"
+            "$source\Backup\Shell.x64.msi"
+            "/qn"
+            "/L*v"
+            "$logdir\06_Console.txt"
+            "ACCEPTEULA=YES"
+        )
+        Start-Process "msiexec.exe" -ArgumentList $MSIArguments -Wait -NoNewWindow
+
+        if (Select-String -path "$logdir\06_Console.txt" -pattern "Installation success or error status: 0.") {
+            Write-Host "    Setup OK" -ForegroundColor Green
+            }
+            else {
+                throw "Setup Failed"
+                }
+
+        ### Explorers
+        Write-Host "    Installing Explorer For ActiveDirectory ..." -ForegroundColor Yellow
+        $MSIArguments = @(
+            "/i"
+            "$source\Explorers\VeeamExplorerForActiveDirectory.msi"
+            "/qn"
+            "/L*v"
+            "$logdir\07_ExplorerForActiveDirectory.txt"
+            "ACCEPTEULA=YES"
+        )
+        Start-Process "msiexec.exe" -ArgumentList $MSIArguments -Wait -NoNewWindow
+
+        if (Select-String -path "$logdir\07_ExplorerForActiveDirectory.txt" -pattern "Installation success or error status: 0.") {
+            Write-Host "    Setup OK" -ForegroundColor Green
+            }
+            else {
+                throw "Setup Failed"
+                }
+
+        Write-Host "    Installing Explorer For Exchange ..." -ForegroundColor Yellow
+        $MSIArguments = @(
+            "/i"
+            "$source\Explorers\VeeamExplorerForExchange.msi"
+            "/qn"
+            "/L*v"
+            "$logdir\08_VeeamExplorerForExchange.txt"
+            "ACCEPTEULA=YES"
+        )
+        Start-Process "msiexec.exe" -ArgumentList $MSIArguments -Wait -NoNewWindow
+
+        if (Select-String -path "$logdir\08_VeeamExplorerForExchange.txt" -pattern "Installation success or error status: 0.") {
+            Write-Host "    Setup OK" -ForegroundColor Green
+            }
+            else {
+                throw "Setup Failed"
+                }
+
+        Write-Host "    Installing Explorer For SQL ..." -ForegroundColor Yellow
+        $MSIArguments = @(
+            "/i"
+            "$source\Explorers\VeeamExplorerForSQL.msi"
+            "/qn"
+            "/L*v"
+            "$logdir\09_VeeamExplorerForSQL.txt"
+            "ACCEPTEULA=YES"
+        )
+        Start-Process "msiexec.exe" -ArgumentList $MSIArguments -Wait -NoNewWindow
+
+        if (Select-String -path "$logdir\09_VeeamExplorerForSQL.txt" -pattern "Installation success or error status: 0.") {
+            Write-Host "    Setup OK" -ForegroundColor Green
+            }
+            else {
+                throw "Setup Failed"
+                }
+
+        Write-Host "    Installing Explorer For Oracle ..." -ForegroundColor Yellow
+        $MSIArguments = @(
+            "/i"
+            "$source\Explorers\VeeamExplorerForOracle.msi"
+            "/qn"
+            "/L*v"
+            "$logdir\10_VeeamExplorerForOracle.txt"
+            "ACCEPTEULA=YES"
+        )
+        Start-Process "msiexec.exe" -ArgumentList $MSIArguments -Wait -NoNewWindow
+
+        if (Select-String -path "$logdir\10_VeeamExplorerForOracle.txt" -pattern "Installation success or error status: 0.") {
+            Write-Host "    Setup OK" -ForegroundColor Green
+            }
+            else {
+                throw "Setup Failed"
+                }
+
+        Write-Host "    Installing Explorer For SharePoint ..." -ForegroundColor Yellow
+        $MSIArguments = @(
+            "/i"
+            "$source\Explorers\VeeamExplorerForSharePoint.msi"
+            "/qn"
+            "/L*v"
+            "$logdir\11_VeeamExplorerForSharePoint.txt"
+            "ACCEPTEULA=YES"
+        )
+        Start-Process "msiexec.exe" -ArgumentList $MSIArguments -Wait -NoNewWindow
+
+        if (Select-String -path "$logdir\11_VeeamExplorerForSharePoint.txt" -pattern "Installation success or error status: 0.") {
+            Write-Host "    Setup OK" -ForegroundColor Green
+            }
+            else {
+                throw "Setup Failed"
+                }
+
+        ## Enterprise Manager
+        Write-Host "Installing Enterprise Manager ..." -ForegroundColor Yellow
+        ### Enterprise Manager Prereqirements
+        Write-Host "    Installing Enterprise Manager Prereqirements ..." -ForegroundColor Yellow
+        $trash = Install-WindowsFeature Web-Default-Doc,Web-Dir-Browsing,Web-Http-Errors,Web-Static-Content,Web-Windows-Auth -Restart:$false -WarningAction SilentlyContinue
+        $trash = Install-WindowsFeature Web-Http-Logging,Web-Stat-Compression,Web-Filtering,Web-Net-Ext45,Web-Asp-Net45,Web-ISAPI-Ext,Web-ISAPI-Filter,Web-Mgmt-Console -Restart:$false  -WarningAction SilentlyContinue
+
+        $MSIArguments = @(
+            "/i"
+            "$source\Redistr\x64\rewrite_amd64.msi"
+            "/qn"
+            "/norestart"
+            "/L*v"
+            "$logdir\12_Rewrite.txt"
+        )
+        Start-Process "msiexec.exe" -ArgumentList $MSIArguments -Wait -NoNewWindow
+
+        if (Select-String -path "$logdir\12_Rewrite.txt" -pattern "Installation success or error status: 0.") {
+            Write-Host "    Setup OK" -ForegroundColor Green
+            }
+            else {
+                throw "Setup Failed"
+                }
+
+        ### Enterprise Manager Web
+        Write-Host "    Installing Enterprise Manager Web ..." -ForegroundColor Yellow
+        $MSIArguments = @(
+            "/i"
+            "$source\EnterpriseManager\BackupWeb_x64.msi"
+            "/qn"
+            "/L*v"
+            "$logdir\13_EntWeb.txt"
+            "ACCEPTEULA=YES"
+            "VBREM_LICENSE_FILE=$licensefile"
+            "VBREM_SERVICE_USER=$fulluser"
+            "VBREM_SERVICE_PASSWORD=$password"
+            "VBREM_SQLSERVER_SERVER=$env:COMPUTERNAME\VEEAMSQL2012"
+        )
+        Start-Process "msiexec.exe" -ArgumentList $MSIArguments -Wait -NoNewWindow
+
+        if (Select-String -path "$logdir\13_EntWeb.txt" -pattern "Installation success or error status: 0.") {
+            Write-Host "    Setup OK" -ForegroundColor Green
+            }
+            else {
+                throw "Setup Failed"
+                }
+
+        ### Enterprise Manager Cloud Portal
+        Write-Host "    Installing Enterprise Manager Cloud Portal ..." -ForegroundColor Yellow
+        <#
+        $MSIArguments = @(
+            "/i"
+            "$source\Cloud Portal\BackupCloudPortal_x64.msi"
+            "/L*v"
+            "$logdir\14_EntCloudPortal.txt"
+            "/qn"
+            "ACCEPTEULA=YES"
+        )
+        Start-Process "msiexec.exe" -ArgumentList $MSIArguments -Wait -NoNewWindow
+        #>
+        Start-Process "msiexec.exe" -ArgumentList "/i `"$source\Cloud Portal\BackupCloudPortal_x64.msi`" /l*v $logdir\14_EntCloudPortal.txt /qn ACCEPTEULA=`"YES`"" -Wait -NoNewWindow
+
+        if (Select-String -path "$logdir\14_EntCloudPortal.txt" -pattern "Installation success or error status: 0.") {
+            Write-Host "    Setup OK" -ForegroundColor Green
+            }
+            else {
+                throw "Setup Failed"
+                }
+
+        ### Update 3
+        Write-Host "Installing Update 3 ..." -ForegroundColor Yellow
+        $Arguments = "/silent /noreboot /log $logdir\15_update.txt VBR_AUTO_UPGRADE=1"
+        Start-Process "$source\Updates\veeam_backup_9.5.0.1536.update3_setup.exe" -ArgumentList $Arguments -Wait -NoNewWindow
+        #endregion
+
+
+
+
+
+
+
+
+
+ }
  }
 #endregion
 
@@ -1151,6 +1662,9 @@ $domainCred = New-Object -TypeName System.Management.Automation.PSCredential `
 $SQLCred = New-Object -TypeName System.Management.Automation.PSCredential `
 -ArgumentList "$($domainName)\SVC_SQL", (ConvertTo-SecureString -String $domainAdminPassword -AsPlainText -Force)
 
+$VeeamCred = New-Object -TypeName System.Management.Automation.PSCredential `
+-ArgumentList "$($domainName)\SVC_Veeam", (ConvertTo-SecureString -String $domainAdminPassword -AsPlainText -Force)
+
 #$ServerISO = "D:\DCBuild\10586.0.151029-1700.TH2_RELEASE_SERVER_OEMRET_X64FRE_EN-US.ISO"
 #$ServerISO = "d:\DCBuild\14393.0.160808-1702.RS1_Release_srvmedia_SERVER_OEMRET_X64FRE_EN-US.ISO"
 #ServerISO = 'D:\DCBuild\en_windows_server_2016_technical_preview_5_x64_dvd_8512312.iso'
@@ -1159,7 +1673,7 @@ $ServerISO = 'f:\dcbuild_Insider\en_windows_server_2016_x64_dvd_9718492.iso' #TH
 $ServerISO1 = 'F:\DCBuild_Insider\Windows_InsiderPreview_Server_17079.iso' #THIS NEEDS to be Modified for your Lab
 
 
-$WindowsKey = '<ProductKey>' #Dave's Technet KEY Remove for Publishing of Book
+$WindowsKey = '<ProductKEY>' #Dave's Technet KEY Remove for Publishing of Book
 
 $unattendSource = [xml]@"
 <?xml version="1.0" encoding="utf-8"?>
@@ -1168,7 +1682,7 @@ $unattendSource = [xml]@"
     <settings pass="specialize">
         <component name="Microsoft-Windows-Shell-Setup" processorArchitecture="amd64" publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS" xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
             <ComputerName>*</ComputerName>
-            <ProductKey><ProductKey></ProductKey> 
+            <ProductKey><>ProductKEY</ProductKey> 
             <RegisteredOrganization>Organization</RegisteredOrganization>
             <RegisteredOwner>Owner</RegisteredOwner>
             <TimeZone>TZ</TimeZone>
@@ -1399,6 +1913,25 @@ Invoke-Command -VMName $VMName -Credential $domainCred {
 Invoke-Command -VMName $VMName -Credential $domainCred {
     param($VMName, $password)
 
+    Write-Output -InputObject "[$($VMName)]:: Creating user account for SVC_Veeam"
+    do 
+    {
+        Start-Sleep -Seconds 5
+        New-ADUser `
+        -Name 'SVC_Veeam' `
+        -SamAccountName  'SVC_Veeam' `
+        -DisplayName 'SVC_Veeam' `
+        -AccountPassword (ConvertTo-SecureString -String $password -AsPlainText -Force) `
+        -ChangePasswordAtLogon $false  `
+        -Enabled $true -ea 0
+    }
+    until ($?)
+    Add-ADGroupMember -Identity 'Domain Admins' -Members 'SVC_Veeam'
+} -ArgumentList $VMName, $domainAdminPassword
+
+Invoke-Command -VMName $VMName -Credential $domainCred {
+    param($VMName, $password)
+
     Write-Output -InputObject "[$($VMName)]:: Creating user account for MVPDays-Admin"
     do 
     {
@@ -1431,29 +1964,6 @@ Invoke-Command -VMName $VMName -Credential $domainCred {
     </#>
 
 
-$VMName = 'Management01'
-$GuestOSName = 'Management01'
-
-Create-DemoVM $VMName $GuestOSName
-
-Invoke-Command -VMName $VMName -Credential $localCred {
-    param($VMName, $domainCred, $domainName)
-    Write-Output -InputObject "[$($VMName)]:: Management tools"
-    $null = Install-WindowsFeature RSAT-Clustering, RSAT-Hyper-V-Tools
-    Write-Output -InputObject "[$($VMName)]:: Joining domain as `"$($env:computername)`""
-    while (!(Test-Connection -ComputerName $domainName -BufferSize 16 -Count 1 -Quiet -ea SilentlyContinue)) 
-    {
-        Start-Sleep -Seconds 1
-    }
-    do 
-    {
-        Add-Computer -DomainName $domainName -Credential $domainCred -ea SilentlyContinue
-    }
-    until ($?)
-} -ArgumentList $VMName, $domainCred, $domainName
-
-Restart-DemoVM $VMName
-
 $VMName = 'Router01'
 $GuestOSName = 'Router01'
 $IPNumber = '254'
@@ -1479,6 +1989,31 @@ Invoke-Command -VMName $VMName -Credential $localCred {
 Install-RRAS -VMName $VMName
 Restart-DemoVM $VMName 
 
+$VMName = 'Management01'
+$GuestOSName = 'Management01'
+
+Create-DemoVM $VMName $GuestOSName
+
+Invoke-Command -VMName $VMName -Credential $localCred {
+    param($VMName, $domainCred, $domainName)
+    Write-Output -InputObject "[$($VMName)]:: Management tools"
+    $null = Install-WindowsFeature RSAT-Clustering, RSAT-Hyper-V-Tools
+    Write-Output -InputObject "[$($VMName)]:: Joining domain as `"$($env:computername)`""
+    while (!(Test-Connection -ComputerName $domainName -BufferSize 16 -Count 1 -Quiet -ea SilentlyContinue)) 
+    {
+        Start-Sleep -Seconds 1
+    }
+    do 
+    {
+        Add-Computer -DomainName $domainName -Credential $domainCred -ea SilentlyContinue
+    }
+    until ($?)
+} -ArgumentList $VMName, $domainCred, $domainName
+
+Restart-DemoVM $VMName
+Install-Veeam -VMName $VMName
+
+
 $VMName = 'VMM01'
 $GuestOSName = 'VMM01'
 
@@ -1503,7 +2038,7 @@ Invoke-Command -VMName $VMName -Credential $localCred {
 Install-WSUS -VMName $VMName
 Create-SQLInstallFile
 Install-SQL -VMName $VMName
-Install-VMM -VMName $VMName
+Install-VMM -VMName $VMName -VMMDomain MVPDays
 
 #Wait-PSDirect 'Router01' -cred $localCred
 Write-Log 'Done' 'Done!'
