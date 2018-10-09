@@ -282,7 +282,7 @@ Function Initialize-BaseImage
                 SourcePath          = $ServerISO
                 RemoteDesktopEnable = $True  
                 Passthru            = $True  
-                Edition    = "ServerDataCenterCore"
+                Edition    = "Windows Server 2016 Datacenter Evaluation"
                 VHDFormat = "VHDX"
                 SizeBytes = 60GB
                 WorkingDirectory = $workingdir
@@ -311,7 +311,7 @@ Function Initialize-BaseImage
                 SourcePath          = $ServerISO
                 RemoteDesktopEnable = $True  
                 Passthru            = $True  
-                Edition    = "ServerDataCenter"
+                Edition    = "Windows Server 2016 Datacenter Evaluation (Desktop Experience)"
                 VHDFormat = "VHDX"
                 SizeBytes = 60GB
                 WorkingDirectory = $workingdir
